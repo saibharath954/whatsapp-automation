@@ -1,0 +1,197 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wa-backend
+  labels:
+    app: wa-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wa-backend
+  template:
+    metadata:
+      labels:
+        app: wa-backend
+    spec:
+      containers:
+        - name: backend
+          image: wa-automation/backend:latest
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: wa-config
+            - secretRef:
+                name: wa-secrets
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: wa-sessions
+              mountPath: /app/.wwebjs_auth
+            - name: wa-media
+              mountPath: /app/uploads/media
+      volumes:
+        - name: wa-sessions
+          persistentVolumeClaim:
+            claimName: wa-sessions-pvc
+        - name: wa-media
+          persistentVolumeClaim:
+            claimName: wa-media-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wa-backend
+spec:
+  selector:
+    app: wa-backend
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wa-frontend
+  labels:
+    app: wa-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wa-frontend
+  template:
+    metadata:
+      labels:
+        app: wa-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: wa-automation/frontend:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wa-frontend
+spec:
+  selector:
+    app: wa-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wa-config
+data:
+  PORT: "3000"
+  NODE_ENV: "production"
+  LLM_PROVIDER: "gemini"
+  GEMINI_MODEL: "gemini-2.0-flash"
+  EMBEDDING_PROVIDER: "gemini"
+  VECTOR_DB_PROVIDER: "redis"
+  RAG_TOP_K: "4"
+  RAG_SIMILARITY_THRESHOLD: "0.75"
+  LLM_CONFIDENCE_THRESHOLD: "0.7"
+  CONTEXT_MAX_MESSAGES: "50"
+  CONTEXT_MAX_DAYS: "7"
+  MEDIA_STORAGE: "local"
+  RATE_LIMIT_PER_ORG_PER_MINUTE: "60"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wa-secrets
+type: Opaque
+stringData:
+  JWT_SECRET: "change-me-in-production"
+  DATABASE_URL: "postgresql://wa_user:wa_pass@postgres:5432/wa_automation"
+  REDIS_URL: "redis://redis:6379"
+  GEMINI_API_KEY: "your-gemini-api-key"
+  SESSION_ENCRYPTION_KEY: "32-byte-hex-key-change-this"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wa-sessions-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wa-media-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wa-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/websocket-services: "wa-backend"
+spec:
+  rules:
+    - host: wa-automation.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: wa-backend
+                port:
+                  number: 3000
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: wa-backend
+                port:
+                  number: 3000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wa-frontend
+                port:
+                  number: 80

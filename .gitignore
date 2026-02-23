@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+.wwebjs_auth/
+.wwebjs_cache/
+coverage/
+.nyc_output/
+*.tgz
+.DS_Store
+tmp/
+uploads/
+media/

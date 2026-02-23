@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # ─── Postgres ───
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wa_user
+      POSTGRES_PASSWORD: wa_pass
+      POSTGRES_DB: wa_automation
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/src/db/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
+      - ./backend/src/db/seed.sql:/docker-entrypoint-initdb.d/002_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wa_user -d wa_automation"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis with RediSearch (for vector DB) ───
+  redis:
+    image: redis/redis-stack:latest
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+      - "8001:8001" # RedisInsight
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Backend ───
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../infra/docker/Dockerfile.backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      JWT_SECRET: dev-secret-change-in-production
+      DATABASE_URL: postgresql://wa_user:wa_pass@postgres:5432/wa_automation
+      REDIS_URL: redis://redis:6379
+      LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: gemini-2.0-flash
+      EMBEDDING_PROVIDER: gemini
+      VECTOR_DB_PROVIDER: redis
+      RAG_TOP_K: 4
+      RAG_SIMILARITY_THRESHOLD: "0.75"
+      LLM_CONFIDENCE_THRESHOLD: "0.7"
+      CONTEXT_MAX_MESSAGES: 50
+      CONTEXT_MAX_DAYS: 7
+      MEDIA_STORAGE: local
+      MEDIA_LOCAL_PATH: /app/uploads/media
+      SESSION_ENCRYPTION_KEY: dev-encryption-key-32-bytes!!!!!!
+      RATE_LIMIT_PER_ORG_PER_MINUTE: 60
+    volumes:
+      - wa_sessions:/app/.wwebjs_auth
+      - wa_media:/app/uploads/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Frontend ───
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/docker/Dockerfile.frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  wa_sessions:
+  wa_media:
