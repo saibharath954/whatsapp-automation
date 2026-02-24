@@ -44,8 +44,8 @@ async function main() {
     const escalationService = new EscalationService();
 
     // LLM & RAG — only initialize if API keys are available
-    let llmProvider;
-    let vectorDB;
+    let llmProvider: any;
+    let vectorDB: any;
     let embedder;
     let retrievalService;
     let ingestionService;

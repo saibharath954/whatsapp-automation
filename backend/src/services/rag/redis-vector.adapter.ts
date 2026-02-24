@@ -48,8 +48,8 @@ export class RedisVectorAdapter implements VectorDBAdapter {
                         DIM: dimensions,
                         DISTANCE_METRIC: 'COSINE',
                     },
-                },
-                { ON: 'JSON', PREFIX: this.keyPrefix(orgId) }
+                } as any, // <-- ADD THIS HERE
+                { ON: 'JSON', PREFIX: this.keyPrefix(orgId) } as any // <-- AND ADD THIS HERE
             );
             logger.info({ orgId, indexName, dimensions }, 'Created vector index');
         }
