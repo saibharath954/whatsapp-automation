@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../components/AuthProvider';
 import {
     Smartphone,
     Users,
@@ -11,6 +12,8 @@ import {
     Sparkles,
     CheckCircle2,
     Circle,
+    Loader2,
+    AlertCircle,
 } from 'lucide-react';
 
 interface Stats {
@@ -35,40 +38,57 @@ const services = [
 ];
 
 export default function Dashboard() {
+    const { orgId } = useAuth();
     const [stats, setStats] = useState<Stats>({
         activeSessions: 0,
         totalCustomers: 0,
         pendingEscalations: 0,
         kbDocuments: 0,
     });
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchStats = async () => {
+            setLoading(true);
+            setError(null);
             try {
-                const [sessionsRes, escalationsRes] = await Promise.allSettled([
-                    api.get<{ sessions: any[] }>('/api/admin/sessions'),
-                    api.get<{ stats: any }>('/api/escalations/stats?orgId=550e8400-e29b-41d4-a716-446655440001'),
+                const [sessionsRes, escalationsRes, kbRes] = await Promise.allSettled([
+                    api.get<{ sessions: any[] }>(`/api/sessions/${orgId}`),
+                    orgId ? api.get<{ stats: any }>(`/api/escalations/stats?orgId=${orgId}`) : Promise.resolve({ stats: { pending: 0 } }),
+                    orgId ? api.get<{ documents: any[] }>(`/api/kb/documents?orgId=${orgId}`) : Promise.resolve({ documents: [] }),
                 ]);
                 const sessions = sessionsRes.status === 'fulfilled' ? sessionsRes.value : { sessions: [] };
                 const escStats = escalationsRes.status === 'fulfilled' ? escalationsRes.value : { stats: { pending: 0 } };
+                const kbDocs = kbRes.status === 'fulfilled' ? kbRes.value : { documents: [] };
                 setStats({
                     activeSessions: sessions.sessions?.filter((s: any) => s.status === 'ready').length || 0,
                     totalCustomers: 0,
                     pendingEscalations: escStats.stats?.pending || 0,
-                    kbDocuments: 0,
+                    kbDocuments: kbDocs.documents?.length || 0,
                 });
-            } catch { /* API not available */ }
+            } catch {
+                setError('Failed to load dashboard stats');
+            } finally {
+                setLoading(false);
+            }
         };
         fetchStats();
-    }, []);
+    }, [orgId]);
 
     return (
         <div className="space-y-6 animate-fade-in">
-            {/* Page header */}
             <div>
                 <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
                 <p className="text-sm text-muted-foreground mt-1">Overview of your WhatsApp automation system</p>
             </div>
+
+            {/* Error */}
+            {error && (
+                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+                </div>
+            )}
 
             {/* Stats */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -78,7 +98,11 @@ export default function Dashboard() {
                             <Icon className="h-5 w-5" />
                         </div>
                         <div>
-                            <p className="text-2xl font-bold tracking-tight">{stats[key]}</p>
+                            {loading ? (
+                                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                            ) : (
+                                <p className="text-2xl font-bold tracking-tight">{stats[key]}</p>
+                            )}
                             <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
                         </div>
                     </div>

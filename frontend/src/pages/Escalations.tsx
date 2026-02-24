@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../components/AuthProvider';
 import {
     Clock,
     MessageSquare,
@@ -8,6 +9,7 @@ import {
     Loader2,
     UserCheck,
     PartyPopper,
+    AlertCircle,
 } from 'lucide-react';
 
 interface EscalationItem {
@@ -39,30 +41,57 @@ function EscStatusBadge({ status }: { status: string }) {
 }
 
 export default function Escalations() {
+    const { orgId, user } = useAuth();
     const [escalations, setEscalations] = useState<EscalationItem[]>([]);
     const [stats, setStats] = useState({ pending: 0, in_progress: 0, resolved_today: 0 });
-    const orgId = '550e8400-e29b-41d4-a716-446655440001';
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => { fetchEscalations(); fetchStats(); }, []);
+    useEffect(() => {
+        if (orgId) {
+            fetchEscalations();
+            fetchStats();
+        }
+    }, [orgId]);
 
     const fetchEscalations = async () => {
-        try { const data = await api.get<{ escalations: EscalationItem[] }>(`/api/escalations?orgId=${orgId}`); setEscalations(data.escalations || []); }
-        catch { /* API not available */ }
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await api.get<{ escalations: EscalationItem[] }>(`/api/escalations?orgId=${orgId}`);
+            setEscalations(data.escalations || []);
+        } catch {
+            setError('Failed to load escalations. Please try again.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const fetchStats = async () => {
-        try { const data = await api.get<{ stats: any }>(`/api/escalations/stats?orgId=${orgId}`); setStats(data.stats || { pending: 0, in_progress: 0, resolved_today: 0 }); }
-        catch { /* ignore */ }
+        try {
+            const data = await api.get<{ stats: any }>(`/api/escalations/stats?orgId=${orgId}`);
+            setStats(data.stats || { pending: 0, in_progress: 0, resolved_today: 0 });
+        } catch { /* stats error is non-critical */ }
     };
 
     const handleTakeover = async (id: string) => {
-        try { await api.post(`/api/escalations/${id}/takeover`, { operatorName: 'Admin' }); fetchEscalations(); fetchStats(); }
-        catch { /* ignore */ }
+        try {
+            await api.post(`/api/escalations/${id}/takeover`, { operatorName: user?.name || 'Operator' });
+            fetchEscalations();
+            fetchStats();
+        } catch {
+            setError('Failed to take over escalation');
+        }
     };
 
     const handleResolve = async (id: string) => {
-        try { await api.post(`/api/escalations/${id}/resolve`); fetchEscalations(); fetchStats(); }
-        catch { /* ignore */ }
+        try {
+            await api.post(`/api/escalations/${id}/resolve`);
+            fetchEscalations();
+            fetchStats();
+        } catch {
+            setError('Failed to resolve escalation');
+        }
     };
 
     const statCards = [
@@ -78,6 +107,13 @@ export default function Escalations() {
                 <p className="text-sm text-muted-foreground mt-1">Manage customer escalations and operator takeovers</p>
             </div>
 
+            {/* Error Banner */}
+            {error && (
+                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+                </div>
+            )}
+
             {/* Stats */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 {statCards.map(({ label, value, icon: Icon, color }) => (
@@ -86,7 +122,11 @@ export default function Escalations() {
                             <Icon className="h-5 w-5" />
                         </div>
                         <div>
-                            <p className="text-2xl font-bold tracking-tight">{value}</p>
+                            {loading ? (
+                                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground mb-1" />
+                            ) : (
+                                <p className="text-2xl font-bold tracking-tight">{value}</p>
+                            )}
                             <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
                         </div>
                     </div>
@@ -111,7 +151,16 @@ export default function Escalations() {
                             </tr>
                         </thead>
                         <tbody>
-                            {escalations.length === 0 ? (
+                            {loading ? (
+                                <tr>
+                                    <td colSpan={6}>
+                                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-3" />
+                                            <p className="text-sm text-muted-foreground">Loading escalations...</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ) : escalations.length === 0 ? (
                                 <tr>
                                     <td colSpan={6}>
                                         <div className="flex flex-col items-center justify-center py-16 text-center">

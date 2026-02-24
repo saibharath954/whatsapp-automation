@@ -1,5 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../components/AuthProvider';
 import {
     Globe,
     RefreshCw,
@@ -8,6 +9,7 @@ import {
     Loader2,
     CheckCircle2,
     ShieldAlert,
+    AlertCircle,
 } from 'lucide-react';
 
 interface AutomationConfig {
@@ -25,33 +27,62 @@ const scopes = [
 ] as const;
 
 export default function Automations() {
+    const { orgId } = useAuth();
     const [_config, setConfig] = useState<AutomationConfig | null>(null);
     const [scope, setScope] = useState('all');
     const [fallback, setFallback] = useState('');
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
-    const orgId = '550e8400-e29b-41d4-a716-446655440001';
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (!orgId) return;
         const fetchConfig = async () => {
+            setLoading(true);
+            setError(null);
             try {
                 const res = await api.get<{ automation: AutomationConfig }>(`/api/automations/${orgId}`);
-                setConfig(res.automation); setScope(res.automation.scope); setFallback(res.automation.fallback_message);
-            } catch { /* API not available */ }
+                setConfig(res.automation);
+                setScope(res.automation.scope);
+                setFallback(res.automation.fallback_message);
+            } catch (err: any) {
+                // Ignore 404s, it just means they need to create their first config.
+                if (err.response?.status === 404 || err.status === 404) {
+                    // Do not set an error. Leave the default scope/fallback in place.
+                    return;
+                }
+                setError('Failed to load automation config. Please try again.');
+            } finally {
+                setLoading(false);
+            }
         };
         fetchConfig();
-    }, []);
+    }, [orgId]);
 
     const handleSave = async (e: FormEvent) => {
         e.preventDefault();
+        if (!orgId) return;
         setSaving(true);
+        setError(null);
         try {
             await api.put(`/api/automations/${orgId}`, { scope, fallback_message: fallback });
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
-        } catch { /* ignore */ }
-        finally { setSaving(false); }
+        } catch {
+            setError('Failed to save configuration');
+        } finally {
+            setSaving(false);
+        }
     };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-20">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -59,6 +90,12 @@ export default function Automations() {
                 <h2 className="text-2xl font-semibold tracking-tight">Automation Config</h2>
                 <p className="text-sm text-muted-foreground mt-1">Configure automation scope, fallback messages, and escalation rules</p>
             </div>
+
+            {error && (
+                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+                </div>
+            )}
 
             <form onSubmit={handleSave} className="space-y-6">
                 {/* Scope */}
@@ -123,7 +160,7 @@ export default function Automations() {
 
                 {/* Save */}
                 <div className="flex items-center gap-3">
-                    <button type="submit" disabled={saving}
+                    <button type="submit" disabled={saving || !orgId}
                         className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 press-effect">
                         {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</> : <><Save className="h-4 w-4" /> Save Configuration</>}
                     </button>

@@ -136,23 +136,18 @@ export async function login(
     // Generate tokens
     const accessToken = generateAccessToken(safeUser);
 
-    // Create refresh token record in DB
+    // Create refresh token with a single INSERT (no placeholder)
+    const tempTokenId = crypto.randomUUID();
+    const refreshToken = generateRefreshToken(user.id, tempTokenId);
+    const tokenHash = hashToken(refreshToken);
+
     const expiresInSeconds = parseExpiry(config.jwtRefreshExpiresIn);
     const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
 
-    const tokenRows = await query<{ id: string }>(
-        `INSERT INTO refresh_tokens (user_id, token_hash, user_agent, ip_address, expires_at)
-         VALUES ($1, $2, $3, $4::inet, $5) RETURNING id`,
-        [user.id, 'placeholder', meta.userAgent || null, meta.ip || null, expiresAt]
-    );
-
-    const tokenId = tokenRows[0].id;
-    const refreshToken = generateRefreshToken(user.id, tokenId);
-
-    // Store actual hash
     await query(
-        'UPDATE refresh_tokens SET token_hash = $1 WHERE id = $2',
-        [hashToken(refreshToken), tokenId]
+        `INSERT INTO refresh_tokens (id, user_id, token_hash, user_agent, ip_address, expires_at)
+         VALUES ($1, $2, $3, $4, $5::inet, $6)`,
+        [tempTokenId, user.id, tokenHash, meta.userAgent || null, meta.ip || null, expiresAt]
     );
 
     logger.info({ userId: user.id, role: user.role }, 'User logged in');
@@ -194,21 +189,18 @@ export async function refresh(
     // Issue new pair
     const accessToken = generateAccessToken(user);
 
+    // Create new refresh token with a single INSERT (no placeholder)
+    const newTokenId = crypto.randomUUID();
+    const newRefreshToken = generateRefreshToken(user.id, newTokenId);
+    const newTokenHash = hashToken(newRefreshToken);
+
     const expiresInSeconds = parseExpiry(config.jwtRefreshExpiresIn);
     const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
 
-    const newTokenRows = await query<{ id: string }>(
-        `INSERT INTO refresh_tokens (user_id, token_hash, user_agent, ip_address, expires_at)
-         VALUES ($1, $2, $3, $4::inet, $5) RETURNING id`,
-        [user.id, 'placeholder', meta.userAgent || null, meta.ip || null, expiresAt]
-    );
-
-    const newTokenId = newTokenRows[0].id;
-    const newRefreshToken = generateRefreshToken(user.id, newTokenId);
-
     await query(
-        'UPDATE refresh_tokens SET token_hash = $1 WHERE id = $2',
-        [hashToken(newRefreshToken), newTokenId]
+        `INSERT INTO refresh_tokens (id, user_id, token_hash, user_agent, ip_address, expires_at)
+         VALUES ($1, $2, $3, $4, $5::inet, $6)`,
+        [newTokenId, user.id, newTokenHash, meta.userAgent || null, meta.ip || null, expiresAt]
     );
 
     return { accessToken, refreshToken: newRefreshToken };

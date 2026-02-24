@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { query, queryOne } from '../db';
 import { Org } from '../types';
 import { authenticate } from '../middleware/auth.middleware';
-import { requireRole } from '../middleware/rbac.middleware';
+import { requireRole, requireOrgAccess } from '../middleware/rbac.middleware';
 
 export async function adminRoutes(fastify: FastifyInstance) {
     // All admin routes require SUPER_ADMIN
@@ -84,6 +84,40 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 [request.params.orgId]
             );
             return { status, session: dbSession };
+        }
+    );
+
+    // ═══════════════════════════════════════════════════
+    // Org-scoped session routes (SUPER_ADMIN + ORG_ADMIN)
+    // ═══════════════════════════════════════════════════
+    const orgGuard = { preHandler: [authenticate, requireRole(['SUPER_ADMIN', 'ORG_ADMIN']), requireOrgAccess] };
+
+    // ─── List sessions for an org ───
+    fastify.get<{ Params: { orgId: string } }>(
+        '/api/sessions/:orgId',
+        orgGuard,
+        async (request) => {
+            const { orgId } = request.params;
+            const sessions = await query(
+                `SELECT ws.*, o.name as org_name
+                 FROM whatsapp_sessions ws
+                 JOIN orgs o ON ws.org_id = o.id
+                 WHERE ws.org_id = $1
+                 ORDER BY ws.updated_at DESC`,
+                [orgId]
+            );
+            return { sessions };
+        }
+    );
+
+    // ─── Disconnect session for an org ───
+    fastify.delete<{ Params: { orgId: string } }>(
+        '/api/sessions/:orgId',
+        orgGuard,
+        async (request) => {
+            const { sessionManager } = fastify as any;
+            await sessionManager.destroySession(request.params.orgId);
+            return { status: 'disconnected' };
         }
     );
 }

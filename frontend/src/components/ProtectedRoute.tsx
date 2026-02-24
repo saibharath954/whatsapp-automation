@@ -5,13 +5,22 @@ import { Loader2 } from 'lucide-react';
 interface ProtectedRouteProps {
     children: React.ReactNode;
     /** Roles allowed to access this route. If omitted, any authenticated user can access. */
-    roles?: UserRole[];
+    allowedRoles?: UserRole[];
 }
 
-export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
+/** Returns the default landing page for a given role */
+export function getDefaultRoute(role: UserRole): string {
+    switch (role) {
+        case 'SUPER_ADMIN': return '/';
+        case 'ORG_ADMIN': return '/';
+        case 'AGENT': return '/escalations';
+    }
+}
+
+export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
     const { isAuthenticated, isLoading, user, hasRole } = useAuth();
 
-    // Show loading spinner while checking auth
+    // ── Loading: show spinner ──
     if (isLoading) {
         return (
             <div className="flex h-screen items-center justify-center bg-background">
@@ -23,27 +32,14 @@ export function ProtectedRoute({ children, roles }: ProtectedRouteProps) {
         );
     }
 
-    // Not authenticated → redirect to login
-    if (!isAuthenticated) {
+    // ── Not authenticated → /login ──
+    if (!isAuthenticated || !user) {
         return <Navigate to="/login" replace />;
     }
 
-    // Authenticated but wrong role → show forbidden or redirect
-    if (roles && !hasRole(roles)) {
-        return (
-            <div className="flex h-screen items-center justify-center bg-background">
-                <div className="rounded-xl border border-border bg-card p-8 text-center max-w-md">
-                    <h2 className="text-lg font-semibold text-foreground">Access Denied</h2>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                        You don't have permission to access this page.
-                        Your role: <span className="font-mono text-xs bg-muted rounded px-1.5 py-0.5">{user?.role}</span>
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        Required: {roles.join(', ')}
-                    </p>
-                </div>
-            </div>
-        );
+    // ── Role check: redirect to default landing if forbidden ──
+    if (allowedRoles && !hasRole(allowedRoles)) {
+        return <Navigate to={getDefaultRoute(user.role)} replace />;
     }
 
     return <>{children}</>;

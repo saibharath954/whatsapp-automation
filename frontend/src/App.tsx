@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard,
@@ -11,10 +11,11 @@ import {
     PanelLeft,
     ChevronRight,
     LogOut,
+    Shield,
 } from 'lucide-react';
 import { ThemeToggle } from './components/ThemeToggle';
-import { ProtectedRoute } from './components/ProtectedRoute';
-import { useAuth } from './components/AuthProvider';
+import { ProtectedRoute, getDefaultRoute } from './components/ProtectedRoute';
+import { useAuth, type UserRole } from './components/AuthProvider';
 import Dashboard from './pages/Dashboard';
 import Sessions from './pages/Sessions';
 import KnowledgeBase from './pages/KnowledgeBase';
@@ -24,19 +25,23 @@ import ChatView from './pages/ChatView';
 import Login from './pages/Login';
 import type { ComponentType } from 'react';
 
+// ─── Nav items with role visibility ───
+
 interface NavItem {
     path: string;
     label: string;
     icon: ComponentType<{ className?: string }>;
+    /** Which roles can see this link. If omitted, visible to all. */
+    visibleTo?: UserRole[];
 }
 
-const navItems: NavItem[] = [
-    { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/sessions', label: 'Sessions', icon: Smartphone },
-    { path: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
-    { path: '/automations', label: 'Automations', icon: Settings },
+const allNavItems: NavItem[] = [
+    { path: '/', label: 'Dashboard', icon: LayoutDashboard, visibleTo: ['SUPER_ADMIN', 'ORG_ADMIN'] },
+    { path: '/sessions', label: 'Sessions', icon: Smartphone, visibleTo: ['SUPER_ADMIN', 'ORG_ADMIN'] },
+    { path: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen, visibleTo: ['SUPER_ADMIN', 'ORG_ADMIN'] },
+    { path: '/automations', label: 'Automations', icon: Settings, visibleTo: ['SUPER_ADMIN', 'ORG_ADMIN'] },
     { path: '/escalations', label: 'Escalations', icon: Bell },
-    { path: '/chat', label: 'Chat View', icon: MessageSquare },
+    { path: '/chat', label: 'Chat View', icon: MessageSquare, visibleTo: ['SUPER_ADMIN', 'ORG_ADMIN'] },
 ];
 
 const pageNames: Record<string, string> = {
@@ -47,6 +52,29 @@ const pageNames: Record<string, string> = {
     '/escalations': 'Escalations',
     '/chat': 'Chat View',
 };
+
+// ─── Role badge ───
+
+function RoleBadge({ role }: { role: UserRole }) {
+    const styles: Record<UserRole, string> = {
+        SUPER_ADMIN: 'bg-purple-500/10 text-purple-500',
+        ORG_ADMIN: 'bg-blue-500/10 text-blue-500',
+        AGENT: 'bg-success/10 text-success',
+    };
+    const labels: Record<UserRole, string> = {
+        SUPER_ADMIN: 'Super Admin',
+        ORG_ADMIN: 'Org Admin',
+        AGENT: 'Agent',
+    };
+    return (
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${styles[role]}`}>
+            <Shield className="h-2.5 w-2.5" />
+            {labels[role]}
+        </span>
+    );
+}
+
+// ─── Header ───
 
 function Header({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
     const location = useLocation();
@@ -69,7 +97,8 @@ function Header({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => v
                 <span className="font-medium text-foreground">{pageName}</span>
             </div>
 
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-3">
+                {user && <RoleBadge role={user.role} />}
                 <ThemeToggle />
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold" title={user?.email || ''}>
                     {user?.name?.charAt(0).toUpperCase() || 'U'}
@@ -79,9 +108,19 @@ function Header({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => v
     );
 }
 
+// ─── App Shell (sidebar + main area) ───
+
 function AppShell() {
     const [collapsed, setCollapsed] = useState(false);
     const { user, logout } = useAuth();
+
+    // Filter nav items by current user's role
+    const navItems = useMemo(() => {
+        if (!user) return [];
+        return allNavItems.filter(
+            (item) => !item.visibleTo || item.visibleTo.includes(user.role)
+        );
+    }, [user]);
 
     return (
         <div className="flex h-screen overflow-hidden bg-background text-foreground">
@@ -103,7 +142,7 @@ function AppShell() {
                     )}
                 </div>
 
-                {/* Nav */}
+                {/* Nav — filtered by role */}
                 <nav className="flex-1 space-y-0.5 px-2 py-3 overflow-y-auto">
                     {navItems.map((item) => {
                         const Icon = item.icon;
@@ -170,19 +209,46 @@ function AppShell() {
                 </div>
             </aside>
 
-            {/* ── Main ── */}
+            {/* ── Main content area ── */}
             <div className="flex flex-1 flex-col overflow-hidden">
                 <Header collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
                 <main className="flex-1 overflow-y-auto">
                     <div className="mx-auto max-w-6xl p-6 lg:p-8">
                         <Routes>
-                            <Route path="/" element={<Dashboard />} />
-                            <Route path="/sessions" element={<Sessions />} />
-                            <Route path="/knowledge-base" element={<KnowledgeBase />} />
-                            <Route path="/automations" element={<Automations />} />
+                            {/* ── SUPER_ADMIN + ORG_ADMIN routes ── */}
+                            <Route path="/" element={
+                                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ORG_ADMIN']}>
+                                    <Dashboard />
+                                </ProtectedRoute>
+                            } />
+                            <Route path="/sessions" element={
+                                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ORG_ADMIN']}>
+                                    <Sessions />
+                                </ProtectedRoute>
+                            } />
+                            <Route path="/knowledge-base" element={
+                                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ORG_ADMIN']}>
+                                    <KnowledgeBase />
+                                </ProtectedRoute>
+                            } />
+                            <Route path="/automations" element={
+                                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ORG_ADMIN']}>
+                                    <Automations />
+                                </ProtectedRoute>
+                            } />
+                            <Route path="/chat" element={
+                                <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ORG_ADMIN']}>
+                                    <ChatView />
+                                </ProtectedRoute>
+                            } />
+
+                            {/* ── All authenticated roles ── */}
                             <Route path="/escalations" element={<Escalations />} />
-                            <Route path="/chat" element={<ChatView />} />
-                            <Route path="*" element={<Navigate to="/" replace />} />
+
+                            {/* ── Catch-all: redirect to role-based default ── */}
+                            <Route path="*" element={
+                                user ? <Navigate to={getDefaultRoute(user.role)} replace /> : <Navigate to="/login" replace />
+                            } />
                         </Routes>
                     </div>
                 </main>
@@ -191,14 +257,17 @@ function AppShell() {
     );
 }
 
+// ─── Root App ───
+
 export default function App() {
+
     return (
         <BrowserRouter>
             <Routes>
-                {/* Public route */}
+                {/* Public */}
                 <Route path="/login" element={<Login />} />
 
-                {/* Protected app shell — all other routes */}
+                {/* Protected shell — any authenticated user */}
                 <Route
                     path="/*"
                     element={

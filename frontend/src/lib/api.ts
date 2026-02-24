@@ -1,19 +1,29 @@
 /**
- * API client with automatic JWT Bearer injection and silent refresh on 401.
+ * Hardened API client with:
+ *  - Automatic Bearer token injection on all /api/* requests
+ *  - 401 interception with queued silent refresh (single refresh for N concurrent 401s)
+ *  - Logout callback to clear AuthProvider state when refresh fails
+ *  - Fastify-compatible refresh POST (body: '{}', credentials: 'include')
  *
  * Usage:
  *   import { api } from '../lib/api';
  *   const data = await api.get<{ orgs: Org[] }>('/api/admin/orgs');
- *   const result = await api.post<{ user: User }>('/api/auth/login', { email, password });
  */
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
+// ─── In-memory token ───
 let accessToken: string | null = null;
-let isRefreshing = false;
-let refreshQueue: Array<{ resolve: (token: string) => void; reject: (err: Error) => void }> = [];
 
-// ─── Token management ───
+// ─── Refresh queue state ───
+let isRefreshing = false;
+let refreshQueue: Array<{
+    resolve: (token: string) => void;
+    reject: (err: Error) => void;
+}> = [];
+
+// ─── Logout callback (set by AuthProvider) ───
+let onAuthFailure: (() => void) | null = null;
 
 export function setAccessToken(token: string | null) {
     accessToken = token;
@@ -21,6 +31,14 @@ export function setAccessToken(token: string | null) {
 
 export function getAccessToken(): string | null {
     return accessToken;
+}
+
+/**
+ * Register a callback that fires when refresh fails (session expired).
+ * AuthProvider uses this to clear user state and redirect to /login.
+ */
+export function setOnAuthFailure(cb: () => void) {
+    onAuthFailure = cb;
 }
 
 // ─── Core fetch wrapper ───
@@ -37,55 +55,72 @@ async function request<T>(method: HttpMethod, url: string, body?: unknown): Prom
     const res = await fetch(url, {
         method,
         headers,
-        credentials: 'include', // Sends HTTP-only cookies (refresh token)
-        body: body ? JSON.stringify(body) : undefined,
+        credentials: 'include',
+        body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
-    // Handle 401 — attempt silent refresh
+    // ── Handle 401 — attempt silent refresh ──
     if (res.status === 401) {
         const errorBody = await res.json().catch(() => ({}));
 
-        // Only attempt refresh if token expired (not if credentials are wrong)
-        if (errorBody.code === 'TOKEN_EXPIRED' || (accessToken && !url.includes('/auth/'))) {
-            const newToken = await silentRefresh();
-            if (newToken) {
-                // Retry original request with new token
+        // Don't refresh on auth endpoints themselves (login, register)
+        // DO refresh if we had a token and it expired, or server says TOKEN_EXPIRED
+        const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register');
+
+        if (!isAuthEndpoint && (errorBody.code === 'TOKEN_EXPIRED' || accessToken)) {
+            try {
+                const newToken = await silentRefresh();
+
+                // Retry the original request with the fresh token
                 const retryRes = await fetch(url, {
                     method,
                     headers: { ...headers, Authorization: `Bearer ${newToken}` },
                     credentials: 'include',
-                    body: body ? JSON.stringify(body) : undefined,
+                    body: body !== undefined ? JSON.stringify(body) : undefined,
                 });
 
                 if (!retryRes.ok) {
-                    const retryError = await retryRes.json().catch(() => ({ error: 'Request failed' }));
-                    throw new ApiError(retryRes.status, retryError.error || 'Request failed', retryError);
+                    const retryErr = await retryRes.json().catch(() => ({ error: 'Request failed' }));
+                    throw new ApiError(retryRes.status, retryErr.error || 'Request failed', retryErr);
                 }
 
+                if (retryRes.status === 204) return {} as T;
                 return retryRes.json() as Promise<T>;
+            } catch (err) {
+                // If refresh itself threw (session dead), propagate logout
+                if (err instanceof RefreshFailedError) {
+                    onAuthFailure?.();
+                    throw new ApiError(401, 'Session expired', { code: 'SESSION_EXPIRED' });
+                }
+                throw err;
             }
         }
 
-        // Refresh failed or not applicable — throw auth error
+        // Auth endpoint failure or no token — throw directly
         throw new ApiError(401, errorBody.error || 'Unauthorized', errorBody);
     }
 
+    // ── Handle other errors ──
     if (!res.ok) {
         const errorBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         throw new ApiError(res.status, errorBody.error || 'Request failed', errorBody);
     }
 
-    // Handle 204 No Content
     if (res.status === 204) return {} as T;
-
     return res.json() as Promise<T>;
 }
 
-// ─── Silent refresh (with queue to prevent concurrent refreshes) ───
+// ─── Silent refresh with request queue ───
+// When multiple requests get 401 simultaneously, only ONE refresh fires.
+// The rest queue up and resolve once the single refresh completes.
 
-async function silentRefresh(): Promise<string | null> {
+class RefreshFailedError extends Error {
+    constructor() { super('Refresh failed'); this.name = 'RefreshFailedError'; }
+}
+
+async function silentRefresh(): Promise<string> {
     if (isRefreshing) {
-        // Another refresh is in progress — queue this request
+        // Park this caller until the in-flight refresh resolves
         return new Promise<string>((resolve, reject) => {
             refreshQueue.push({ resolve, reject });
         });
@@ -96,32 +131,33 @@ async function silentRefresh(): Promise<string | null> {
     try {
         const res = await fetch('/api/auth/refresh', {
             method: 'POST',
-            credentials: 'include', // Sends the HTTP-only refresh cookie
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: '{}',
+            body: '{}', // Fastify requires a JSON body
         });
 
         if (!res.ok) {
-            // Refresh failed — clear token and reject all queued requests
             accessToken = null;
-            refreshQueue.forEach(({ reject }) => reject(new Error('Refresh failed')));
+            const err = new RefreshFailedError();
+            refreshQueue.forEach(({ reject }) => reject(err));
             refreshQueue = [];
-            return null;
+            throw err;
         }
 
         const data = await res.json();
         accessToken = data.accessToken;
 
-        // Resolve all queued requests with the new token
+        // Unblock all queued callers
         refreshQueue.forEach(({ resolve }) => resolve(data.accessToken));
         refreshQueue = [];
 
         return data.accessToken;
-    } catch {
+    } catch (err) {
         accessToken = null;
-        refreshQueue.forEach(({ reject }) => reject(new Error('Refresh failed')));
+        const error = err instanceof RefreshFailedError ? err : new RefreshFailedError();
+        refreshQueue.forEach(({ reject }) => reject(error));
         refreshQueue = [];
-        return null;
+        throw error;
     } finally {
         isRefreshing = false;
     }

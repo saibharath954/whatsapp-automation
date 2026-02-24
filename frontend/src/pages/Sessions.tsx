@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../components/AuthProvider';
 import {
     Smartphone,
     Unplug,
@@ -38,20 +39,31 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function Sessions() {
+    const { orgId } = useAuth();
     const [sessions, setSessions] = useState<SessionInfo[]>([]);
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [wsStatus, setWsStatus] = useState('disconnected');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
-    const orgId = '550e8400-e29b-41d4-a716-446655440001';
 
     useEffect(() => { fetchSessions(); }, []);
 
     const fetchSessions = async () => {
-        try { const data = await api.get<{ sessions: SessionInfo[] }>('/api/admin/sessions'); setSessions(data.sessions || []); }
-        catch { /* API not available */ }
+        setLoading(true);
+        setError(null);
+        try {
+            const data = await api.get<{ sessions: SessionInfo[] }>(`/api/sessions/${orgId}`);
+            setSessions(data.sessions || []);
+        } catch {
+            setError('Failed to load sessions');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const connectSession = () => {
+        if (!orgId) return;
         const ws = new WebSocket(`ws://${window.location.host}/ws/session/${orgId}`);
         wsRef.current = ws;
         ws.onopen = () => { setWsStatus('connecting'); ws.send(JSON.stringify({ type: 'connect' })); };
@@ -64,8 +76,16 @@ export default function Sessions() {
     };
 
     const disconnectSession = async () => {
-        try { await api.delete(`/api/admin/sessions/${orgId}`); wsRef.current?.close(); setWsStatus('disconnected'); setQrCode(null); fetchSessions(); }
-        catch { /* ignore */ }
+        if (!orgId) return;
+        try {
+            await api.delete(`/api/sessions/${orgId}`);
+            wsRef.current?.close();
+            setWsStatus('disconnected');
+            setQrCode(null);
+            fetchSessions();
+        } catch {
+            setError('Failed to disconnect session');
+        }
     };
 
     return (
@@ -75,12 +95,18 @@ export default function Sessions() {
                 <p className="text-sm text-muted-foreground mt-1">Connect and manage WhatsApp sessions per organization</p>
             </div>
 
+            {error && (
+                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+                </div>
+            )}
+
             {/* Actions */}
             <div className="flex gap-3">
-                <button onClick={connectSession} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring press-effect">
+                <button onClick={connectSession} disabled={!orgId} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 press-effect">
                     <Smartphone className="h-4 w-4" /> Connect WhatsApp
                 </button>
-                <button onClick={disconnectSession} className="inline-flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20 focus:outline-none focus:ring-2 focus:ring-ring press-effect">
+                <button onClick={disconnectSession} disabled={!orgId} className="inline-flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/20 focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 press-effect">
                     <Unplug className="h-4 w-4" /> Disconnect
                 </button>
             </div>
@@ -120,38 +146,44 @@ export default function Sessions() {
                     <h3 className="text-sm font-semibold">Active Sessions</h3>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="border-b border-border">
-                                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Organization</th>
-                                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone</th>
-                                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</th>
-                                <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Last Active</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sessions.length === 0 ? (
-                                <tr>
-                                    <td colSpan={4}>
-                                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                                            <Smartphone className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                                            <h3 className="text-sm font-semibold">No sessions yet</h3>
-                                            <p className="text-xs text-muted-foreground mt-1">Click "Connect WhatsApp" to start a new session</p>
-                                        </div>
-                                    </td>
+                    {loading ? (
+                        <div className="flex items-center justify-center py-16">
+                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : (
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-border">
+                                    <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Organization</th>
+                                    <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Phone</th>
+                                    <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</th>
+                                    <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Last Active</th>
                                 </tr>
-                            ) : (
-                                sessions.map((s) => (
-                                    <tr key={s.id} className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
-                                        <td className="px-5 py-3.5 font-medium">{s.org_name || 'Demo Corp'}</td>
-                                        <td className="px-5 py-3.5 text-muted-foreground">{s.phone_number || '—'}</td>
-                                        <td className="px-5 py-3.5"><StatusBadge status={s.status} /></td>
-                                        <td className="px-5 py-3.5 text-muted-foreground">{s.last_active_at ? new Date(s.last_active_at).toLocaleString() : '—'}</td>
+                            </thead>
+                            <tbody>
+                                {sessions.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={4}>
+                                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                                <Smartphone className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                                                <h3 className="text-sm font-semibold">No sessions yet</h3>
+                                                <p className="text-xs text-muted-foreground mt-1">Click "Connect WhatsApp" to start a new session</p>
+                                            </div>
+                                        </td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                ) : (
+                                    sessions.map((s) => (
+                                        <tr key={s.id} className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
+                                            <td className="px-5 py-3.5 font-medium">{s.org_name || 'Demo Corp'}</td>
+                                            <td className="px-5 py-3.5 text-muted-foreground">{s.phone_number || '—'}</td>
+                                            <td className="px-5 py-3.5"><StatusBadge status={s.status} /></td>
+                                            <td className="px-5 py-3.5 text-muted-foreground">{s.last_active_at ? new Date(s.last_active_at).toLocaleString() : '—'}</td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    )}
                 </div>
             </div>
         </div>
