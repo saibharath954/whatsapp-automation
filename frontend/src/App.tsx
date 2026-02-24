@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard,
     Smartphone,
@@ -10,14 +10,18 @@ import {
     PanelLeftClose,
     PanelLeft,
     ChevronRight,
+    LogOut,
 } from 'lucide-react';
 import { ThemeToggle } from './components/ThemeToggle';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { useAuth } from './components/AuthProvider';
 import Dashboard from './pages/Dashboard';
 import Sessions from './pages/Sessions';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Automations from './pages/Automations';
 import Escalations from './pages/Escalations';
 import ChatView from './pages/ChatView';
+import Login from './pages/Login';
 import type { ComponentType } from 'react';
 
 interface NavItem {
@@ -46,6 +50,7 @@ const pageNames: Record<string, string> = {
 
 function Header({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
     const location = useLocation();
+    const { user } = useAuth();
     const pageName = pageNames[location.pathname] || 'Dashboard';
 
     return (
@@ -66,104 +71,143 @@ function Header({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => v
 
             <div className="ml-auto flex items-center gap-2">
                 <ThemeToggle />
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                    A
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold" title={user?.email || ''}>
+                    {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </div>
             </div>
         </header>
     );
 }
 
-export default function App() {
+function AppShell() {
     const [collapsed, setCollapsed] = useState(false);
+    const { user, logout } = useAuth();
 
     return (
-        <BrowserRouter>
-            <div className="flex h-screen overflow-hidden bg-background text-foreground">
-                {/* ── Sidebar ── */}
-                <aside
-                    className={`flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ease-in-out
+        <div className="flex h-screen overflow-hidden bg-background text-foreground">
+            {/* ── Sidebar ── */}
+            <aside
+                className={`flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ease-in-out
             ${collapsed ? 'w-[68px]' : 'w-64'}`}
-                >
-                    {/* Logo */}
-                    <div className={`flex items-center border-b border-sidebar-border h-14 shrink-0 ${collapsed ? 'justify-center px-2' : 'gap-2.5 px-5'}`}>
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-success text-success-foreground font-bold text-sm">
-                            W
-                        </div>
-                        {!collapsed && (
-                            <div className="overflow-hidden">
-                                <h1 className="text-sm font-semibold text-sidebar-foreground whitespace-nowrap">WA Automation</h1>
-                                <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Admin</p>
-                            </div>
-                        )}
+            >
+                {/* Logo */}
+                <div className={`flex items-center border-b border-sidebar-border h-14 shrink-0 ${collapsed ? 'justify-center px-2' : 'gap-2.5 px-5'}`}>
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-success text-success-foreground font-bold text-sm">
+                        W
                     </div>
+                    {!collapsed && (
+                        <div className="overflow-hidden">
+                            <h1 className="text-sm font-semibold text-sidebar-foreground whitespace-nowrap">WA Automation</h1>
+                            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">Admin</p>
+                        </div>
+                    )}
+                </div>
 
-                    {/* Nav */}
-                    <nav className="flex-1 space-y-0.5 px-2 py-3 overflow-y-auto">
-                        {navItems.map((item) => {
-                            const Icon = item.icon;
-                            return (
-                                <NavLink
-                                    key={item.path}
-                                    to={item.path}
-                                    end={item.path === '/'}
-                                    title={collapsed ? item.label : undefined}
-                                    className={({ isActive }) =>
-                                        `group relative flex items-center rounded-lg transition-all duration-150
+                {/* Nav */}
+                <nav className="flex-1 space-y-0.5 px-2 py-3 overflow-y-auto">
+                    {navItems.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                            <NavLink
+                                key={item.path}
+                                to={item.path}
+                                end={item.path === '/'}
+                                title={collapsed ? item.label : undefined}
+                                className={({ isActive }) =>
+                                    `group relative flex items-center rounded-lg transition-all duration-150
                      ${collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2'}
                      ${isActive
-                                            ? 'bg-sidebar-accent text-sidebar-foreground font-semibold'
-                                            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground'
-                                        }`
-                                    }
-                                >
-                                    {({ isActive }) => (
-                                        <>
-                                            {isActive && (
-                                                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-success" />
-                                            )}
-                                            <Icon className="h-[18px] w-[18px] shrink-0" />
-                                            {!collapsed && <span className="text-sm whitespace-nowrap">{item.label}</span>}
-                                        </>
-                                    )}
-                                </NavLink>
-                            );
-                        })}
-                    </nav>
+                                        ? 'bg-sidebar-accent text-sidebar-foreground font-semibold'
+                                        : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                                    }`
+                                }
+                            >
+                                {({ isActive }) => (
+                                    <>
+                                        {isActive && (
+                                            <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-success" />
+                                        )}
+                                        <Icon className="h-[18px] w-[18px] shrink-0" />
+                                        {!collapsed && <span className="text-sm whitespace-nowrap">{item.label}</span>}
+                                    </>
+                                )}
+                            </NavLink>
+                        );
+                    })}
+                </nav>
 
-                    {/* Footer */}
-                    <div className={`border-t border-sidebar-border py-3 ${collapsed ? 'px-2' : 'px-3'}`}>
-                        <div className={`flex items-center gap-3 rounded-lg px-2 py-2 ${collapsed ? 'justify-center' : ''}`}>
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-xs font-semibold">
-                                A
+                {/* Footer — user info + logout */}
+                <div className={`border-t border-sidebar-border py-3 ${collapsed ? 'px-2' : 'px-3'}`}>
+                    <div className={`flex items-center gap-3 rounded-lg px-2 py-2 ${collapsed ? 'justify-center' : ''}`}>
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-semibold">
+                            {user?.name?.charAt(0).toUpperCase() || 'U'}
+                        </div>
+                        {!collapsed && (
+                            <div className="flex-1 overflow-hidden">
+                                <p className="text-xs font-medium text-sidebar-foreground truncate">{user?.name || 'User'}</p>
+                                <p className="text-[10px] text-muted-foreground truncate">{user?.email || ''}</p>
                             </div>
-                            {!collapsed && (
-                                <div className="overflow-hidden">
-                                    <p className="text-xs font-medium text-sidebar-foreground truncate">Admin User</p>
-                                    <p className="text-[10px] text-muted-foreground truncate">admin@demo.com</p>
-                                </div>
-                            )}
-                        </div>
+                        )}
+                        {!collapsed && (
+                            <button
+                                onClick={logout}
+                                className="rounded-md p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors focus:outline-none"
+                                title="Sign out"
+                            >
+                                <LogOut className="h-4 w-4" />
+                            </button>
+                        )}
                     </div>
-                </aside>
-
-                {/* ── Main ── */}
-                <div className="flex flex-1 flex-col overflow-hidden">
-                    <Header collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
-                    <main className="flex-1 overflow-y-auto">
-                        <div className="mx-auto max-w-6xl p-6 lg:p-8">
-                            <Routes>
-                                <Route path="/" element={<Dashboard />} />
-                                <Route path="/sessions" element={<Sessions />} />
-                                <Route path="/knowledge-base" element={<KnowledgeBase />} />
-                                <Route path="/automations" element={<Automations />} />
-                                <Route path="/escalations" element={<Escalations />} />
-                                <Route path="/chat" element={<ChatView />} />
-                            </Routes>
-                        </div>
-                    </main>
+                    {collapsed && (
+                        <button
+                            onClick={logout}
+                            className="mt-1 flex w-full items-center justify-center rounded-lg py-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors focus:outline-none"
+                            title="Sign out"
+                        >
+                            <LogOut className="h-[18px] w-[18px]" />
+                        </button>
+                    )}
                 </div>
+            </aside>
+
+            {/* ── Main ── */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+                <Header collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+                <main className="flex-1 overflow-y-auto">
+                    <div className="mx-auto max-w-6xl p-6 lg:p-8">
+                        <Routes>
+                            <Route path="/" element={<Dashboard />} />
+                            <Route path="/sessions" element={<Sessions />} />
+                            <Route path="/knowledge-base" element={<KnowledgeBase />} />
+                            <Route path="/automations" element={<Automations />} />
+                            <Route path="/escalations" element={<Escalations />} />
+                            <Route path="/chat" element={<ChatView />} />
+                            <Route path="*" element={<Navigate to="/" replace />} />
+                        </Routes>
+                    </div>
+                </main>
             </div>
+        </div>
+    );
+}
+
+export default function App() {
+    return (
+        <BrowserRouter>
+            <Routes>
+                {/* Public route */}
+                <Route path="/login" element={<Login />} />
+
+                {/* Protected app shell — all other routes */}
+                <Route
+                    path="/*"
+                    element={
+                        <ProtectedRoute>
+                            <AppShell />
+                        </ProtectedRoute>
+                    }
+                />
+            </Routes>
         </BrowserRouter>
     );
 }

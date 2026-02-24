@@ -1,19 +1,18 @@
 -- WhatsApp Automation MVP Schema
 -- Migration 001: Initial tables
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Enable pgcrypto (useful for future hashing needs, but native UUIDs are used below)
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ─── Organizations ───
 CREATE TABLE orgs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     slug VARCHAR(100) UNIQUE NOT NULL,
     settings JSONB NOT NULL DEFAULT '{
         "business_hours": {"enabled": false, "timezone": "UTC", "schedule": {}},
-        "fallback_message": "I don'\''t have enough information to answer that. Would you like to speak with a human agent?",
-        "escalation_message": "I'\''m connecting you with a human agent. Please hold on.",
+        "fallback_message": "I don''t have enough information to answer that. Would you like to speak with a human agent?",
+        "escalation_message": "I''m connecting you with a human agent. Please hold on.",
         "max_context_messages": 50,
         "max_context_days": 7,
         "rag_top_k": 4,
@@ -27,7 +26,7 @@ CREATE TABLE orgs (
 
 -- ─── WhatsApp Sessions ───
 CREATE TABLE whatsapp_sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     phone_number VARCHAR(20),
     status VARCHAR(20) NOT NULL DEFAULT 'initializing'
@@ -41,7 +40,7 @@ CREATE TABLE whatsapp_sessions (
 
 -- ─── Customers ───
 CREATE TABLE customers (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     phone_number VARCHAR(20) NOT NULL,
     name VARCHAR(255),
@@ -57,7 +56,7 @@ CREATE TABLE customers (
 
 -- ─── Conversations ───
 CREATE TABLE conversations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     session_id UUID REFERENCES whatsapp_sessions(id),
@@ -72,7 +71,7 @@ CREATE INDEX idx_conversations_customer ON conversations(customer_id);
 
 -- ─── Messages ───
 CREATE TABLE messages (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -91,7 +90,7 @@ CREATE INDEX idx_messages_org ON messages(org_id);
 
 -- ─── Knowledge Base Documents ───
 CREATE TABLE kb_documents (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     title VARCHAR(500) NOT NULL,
     source_url TEXT,
@@ -107,7 +106,7 @@ CREATE INDEX idx_kb_documents_org ON kb_documents(org_id);
 
 -- ─── Knowledge Base Chunks ───
 CREATE TABLE kb_chunks (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
     org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     chunk_index INTEGER NOT NULL,
@@ -122,7 +121,7 @@ CREATE INDEX idx_kb_chunks_org ON kb_chunks(org_id);
 
 -- ─── Automations ───
 CREATE TABLE automations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID UNIQUE NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     scope VARCHAR(10) NOT NULL DEFAULT 'all'
         CHECK (scope IN ('all', 'repeat', 'custom')),
@@ -135,7 +134,7 @@ CREATE TABLE automations (
 
 -- ─── Escalations ───
 CREATE TABLE escalations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
     conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,

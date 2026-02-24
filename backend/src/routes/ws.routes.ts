@@ -1,8 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import QRCode from 'qrcode';
+import { authenticate } from '../middleware/auth.middleware';
+import { requireRole } from '../middleware/rbac.middleware';
 
 export async function wsRoutes(fastify: FastifyInstance) {
     // ─── WebSocket for QR code and live session updates ───
+    // Note: WebSocket auth is handled via query param token since
+    // browsers can't set Authorization headers on WebSocket connections
     fastify.get('/ws/session/:orgId', { websocket: true }, (socket, request) => {
         const orgId = (request.params as any).orgId;
         const { sessionManager } = fastify as any;
@@ -57,9 +61,10 @@ export async function wsRoutes(fastify: FastifyInstance) {
         });
     });
 
-    // ─── HTTP endpoint to trigger session connect ───
+    // ─── HTTP endpoint to trigger session connect (SUPER_ADMIN / ORG_ADMIN) ───
     fastify.post<{ Params: { orgId: string } }>(
         '/api/admin/sessions/:orgId/connect',
+        { preHandler: [authenticate, requireRole(['SUPER_ADMIN', 'ORG_ADMIN'])] },
         async (request) => {
             const { sessionManager } = fastify as any;
             const sessionId = await sessionManager.createSession(request.params.orgId);
@@ -67,9 +72,10 @@ export async function wsRoutes(fastify: FastifyInstance) {
         }
     );
 
-    // ─── HTTP endpoint to disconnect session ───
+    // ─── HTTP endpoint to disconnect session (SUPER_ADMIN / ORG_ADMIN) ───
     fastify.delete<{ Params: { orgId: string } }>(
         '/api/admin/sessions/:orgId',
+        { preHandler: [authenticate, requireRole(['SUPER_ADMIN', 'ORG_ADMIN'])] },
         async (request) => {
             const { sessionManager } = fastify as any;
             await sessionManager.destroySession(request.params.orgId);

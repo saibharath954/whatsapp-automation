@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { api } from '../lib/api';
 import {
     Clock,
     MessageSquare,
@@ -45,22 +46,22 @@ export default function Escalations() {
     useEffect(() => { fetchEscalations(); fetchStats(); }, []);
 
     const fetchEscalations = async () => {
-        try { const res = await fetch(`/api/escalations?orgId=${orgId}`); const data = await res.json(); setEscalations(data.escalations || []); }
+        try { const data = await api.get<{ escalations: EscalationItem[] }>(`/api/escalations?orgId=${orgId}`); setEscalations(data.escalations || []); }
         catch { /* API not available */ }
     };
 
     const fetchStats = async () => {
-        try { const res = await fetch(`/api/escalations/stats?orgId=${orgId}`); const data = await res.json(); setStats(data.stats || { pending: 0, in_progress: 0, resolved_today: 0 }); }
+        try { const data = await api.get<{ stats: any }>(`/api/escalations/stats?orgId=${orgId}`); setStats(data.stats || { pending: 0, in_progress: 0, resolved_today: 0 }); }
         catch { /* ignore */ }
     };
 
     const handleTakeover = async (id: string) => {
-        try { await fetch(`/api/escalations/${id}/takeover`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operatorName: 'Admin' }) }); fetchEscalations(); fetchStats(); }
+        try { await api.post(`/api/escalations/${id}/takeover`, { operatorName: 'Admin' }); fetchEscalations(); fetchStats(); }
         catch { /* ignore */ }
     };
 
     const handleResolve = async (id: string) => {
-        try { await fetch(`/api/escalations/${id}/resolve`, { method: 'POST' }); fetchEscalations(); fetchStats(); }
+        try { await api.post(`/api/escalations/${id}/resolve`); fetchEscalations(); fetchStats(); }
         catch { /* ignore */ }
     };
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
+import { api } from '../lib/api';
 import {
     Globe,
     RefreshCw,
@@ -34,8 +35,8 @@ export default function Automations() {
     useEffect(() => {
         const fetchConfig = async () => {
             try {
-                const res = await fetch(`/api/automations/${orgId}`);
-                if (res.ok) { const data = await res.json(); setConfig(data.automation); setScope(data.automation.scope); setFallback(data.automation.fallback_message); }
+                const res = await api.get<{ automation: AutomationConfig }>(`/api/automations/${orgId}`);
+                setConfig(res.automation); setScope(res.automation.scope); setFallback(res.automation.fallback_message);
             } catch { /* API not available */ }
         };
         fetchConfig();
@@ -45,7 +46,7 @@ export default function Automations() {
         e.preventDefault();
         setSaving(true);
         try {
-            await fetch(`/api/automations/${orgId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope, fallback_message: fallback }) });
+            await api.put(`/api/automations/${orgId}`, { scope, fallback_message: fallback });
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch { /* ignore */ }

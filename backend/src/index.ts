@@ -1,11 +1,13 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
 import websocket from '@fastify/websocket';
 import { config } from './config';
 import { logger } from './utils/logger';
 
 // Routes
 import { adminRoutes } from './routes/admin.routes';
+import { authRoutes } from './routes/auth.routes';
 import { kbRoutes } from './routes/kb.routes';
 import { automationRoutes } from './routes/automation.routes';
 import { escalationRoutes } from './routes/escalation.routes';
@@ -29,7 +31,8 @@ async function main() {
     });
 
     // ─── Plugins ───
-    await app.register(cors, { origin: true });
+    await app.register(cors, { origin: true, credentials: true });
+    await app.register(cookie);
     await app.register(websocket);
 
     // ─── Initialize Services ───
@@ -77,6 +80,7 @@ async function main() {
     (app as any).messagePipeline = messagePipeline;
 
     // ─── Register Routes ───
+    await app.register(authRoutes);
     await app.register(adminRoutes);
     await app.register(kbRoutes);
     await app.register(automationRoutes);

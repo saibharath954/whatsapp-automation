@@ -1,11 +1,17 @@
 import { FastifyInstance } from 'fastify';
 import { query } from '../db';
 import { Message } from '../types';
+import { authenticate } from '../middleware/auth.middleware';
+import { requireRole, requireOrgAccess } from '../middleware/rbac.middleware';
 
 export async function conversationRoutes(fastify: FastifyInstance) {
+    // All authenticated users can view conversations
+    const authGuard = { preHandler: [authenticate, requireOrgAccess] };
+
     // ─── Get conversation history ───
     fastify.get<{ Params: { customerId: string }; Querystring: { orgId: string; limit?: string } }>(
         '/api/conversations/:customerId/history',
+        authGuard,
         async (request) => {
             const { orgId, limit } = request.query;
             const maxMessages = parseInt(limit || '50', 10);
@@ -23,9 +29,10 @@ export async function conversationRoutes(fastify: FastifyInstance) {
         }
     );
 
-    // ─── Developer: Re-run RAG for testing ───
+    // ─── Developer: Re-run RAG for testing (SUPER_ADMIN only) ───
     fastify.post<{ Body: { orgId: string; query: string; topK?: number } }>(
         '/api/dev/rag-test',
+        { preHandler: [authenticate, requireRole(['SUPER_ADMIN'])] },
         async (request) => {
             const { orgId, query: queryText, topK } = request.body;
             const { retrievalService } = fastify as any;

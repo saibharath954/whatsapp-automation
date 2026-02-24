@@ -1,4 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
+import { api } from '../lib/api';
 import {
     Upload,
     Loader2,
@@ -39,7 +40,7 @@ export default function KnowledgeBase() {
     useEffect(() => { fetchDocuments(); }, []);
 
     const fetchDocuments = async () => {
-        try { const res = await fetch(`/api/kb/documents?orgId=${orgId}`); const data = await res.json(); setDocuments(data.documents || []); }
+        try { const data = await api.get<{ documents: KBDoc[] }>(`/api/kb/documents?orgId=${orgId}`); setDocuments(data.documents || []); }
         catch { /* API not available */ }
     };
 
@@ -48,13 +49,13 @@ export default function KnowledgeBase() {
         if (!title || !textContent) return;
         setUploading(true);
         try {
-            const res = await fetch('/api/kb/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId, title, sourceUrl: sourceUrl || undefined, text: textContent, fileType: 'text' }) });
-            if (res.ok) { setTitle(''); setSourceUrl(''); setTextContent(''); fetchDocuments(); }
+            await api.post('/api/kb/upload', { orgId, title, sourceUrl: sourceUrl || undefined, text: textContent, fileType: 'text' });
+            setTitle(''); setSourceUrl(''); setTextContent(''); fetchDocuments();
         } catch { /* error */ } finally { setUploading(false); }
     };
 
     const handleDelete = async (docId: string) => {
-        try { await fetch(`/api/kb/documents/${docId}?orgId=${orgId}`, { method: 'DELETE' }); fetchDocuments(); }
+        try { await api.delete(`/api/kb/documents/${docId}?orgId=${orgId}`); fetchDocuments(); }
         catch { /* ignore */ }
     };
 

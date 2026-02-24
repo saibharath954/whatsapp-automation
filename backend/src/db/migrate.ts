@@ -1,28 +1,61 @@
-import { readFileSync } from 'fs';
+import 'dotenv/config';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { getPool } from '../db';
+import { getPool, transaction } from './index'; // Adjust path if needed
 import { logger } from '../utils/logger';
 
 async function migrate() {
     const pool = getPool();
-    const migrationPath = join(__dirname, 'migrations', '001_initial_schema.sql');
-    const sql = readFileSync(migrationPath, 'utf-8');
+    const migrationsDir = join(__dirname, 'migrations');
+    const files = readdirSync(migrationsDir)
+        .filter((f) => f.endsWith('.sql'))
+        .sort(); // lexicographic sort ensures 001 < 002 < 003...
 
-    logger.info('Running database migrations...');
+    logger.info(`Found ${files.length} migration files`);
 
-    try {
-        await pool.query(sql);
-        logger.info('✅ Migrations completed successfully');
-    } catch (error: any) {
-        if (error.message?.includes('already exists')) {
-            logger.info('Schema already exists, skipping migration');
-        } else {
-            logger.error({ error }, '❌ Migration failed');
-            throw error;
+    // Ensure migrations_history table exists before checking it
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS migrations_history (
+            id SERIAL PRIMARY KEY,
+            filename VARCHAR(255) UNIQUE NOT NULL,
+            applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+    `);
+
+    for (const file of files) {
+        const filePath = join(migrationsDir, file);
+        const sql = readFileSync(filePath, 'utf-8');
+
+        try {
+            // Check if this migration has already been applied
+            const { rows } = await pool.query(
+                'SELECT id FROM migrations_history WHERE filename = $1',
+                [file]
+            );
+
+            if (rows.length > 0) {
+                logger.info(`⏭️  ${file} — already applied, skipping`);
+                continue; // Skip to the next file
+            }
+
+            // Execute the migration AND log it in the history table inside ONE transaction
+            await transaction(async (client) => {
+                await client.query(sql);
+                await client.query(
+                    'INSERT INTO migrations_history (filename) VALUES ($1)',
+                    [file]
+                );
+            });
+
+            logger.info(`✅ ${file} — applied successfully`);
+        } catch (error: any) {
+            logger.error({ error, file }, `❌ ${file} — failed. Transaction rolled back.`);
+            throw error; // Stop the entire process immediately on first failure
         }
-    } finally {
-        await pool.end();
     }
+
+    logger.info('All migrations complete');
+    await pool.end();
 }
 
 migrate().catch((err) => {

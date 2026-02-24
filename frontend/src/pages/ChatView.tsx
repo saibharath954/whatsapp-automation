@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { api } from '../lib/api';
 import {
     Search,
     Loader2,
@@ -28,7 +29,7 @@ export default function ChatView() {
     const fetchHistory = async () => {
         if (!customerId) return;
         setLoading(true);
-        try { const res = await fetch(`/api/conversations/${customerId}/history?orgId=${orgId}`); const data = await res.json(); setMessages(data.messages || []); }
+        try { const data = await api.get<{ messages: ChatMessage[] }>(`/api/conversations/${customerId}/history?orgId=${orgId}`); setMessages(data.messages || []); }
         catch { /* ignore */ } finally { setLoading(false); }
     };
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { api } from '../lib/api';
 import {
     Smartphone,
     Users,
@@ -45,11 +46,11 @@ export default function Dashboard() {
         const fetchStats = async () => {
             try {
                 const [sessionsRes, escalationsRes] = await Promise.allSettled([
-                    fetch('/api/admin/sessions'),
-                    fetch('/api/escalations/stats?orgId=550e8400-e29b-41d4-a716-446655440001'),
+                    api.get<{ sessions: any[] }>('/api/admin/sessions'),
+                    api.get<{ stats: any }>('/api/escalations/stats?orgId=550e8400-e29b-41d4-a716-446655440001'),
                 ]);
-                const sessions = sessionsRes.status === 'fulfilled' ? await sessionsRes.value.json() : { sessions: [] };
-                const escStats = escalationsRes.status === 'fulfilled' ? await escalationsRes.value.json() : { stats: { pending: 0 } };
+                const sessions = sessionsRes.status === 'fulfilled' ? sessionsRes.value : { sessions: [] };
+                const escStats = escalationsRes.status === 'fulfilled' ? escalationsRes.value : { stats: { pending: 0 } };
                 setStats({
                     activeSessions: sessions.sessions?.filter((s: any) => s.status === 'ready').length || 0,
                     totalCustomers: 0,

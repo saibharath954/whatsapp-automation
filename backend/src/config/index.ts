@@ -7,6 +7,9 @@ const configSchema = z.object({
     port: z.number().default(3000),
     nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
     jwtSecret: z.string().min(8),
+    jwtRefreshSecret: z.string().min(8),
+    jwtAccessExpiresIn: z.string().default('15m'),
+    jwtRefreshExpiresIn: z.string().default('7d'),
 
     // Database
     databaseUrl: z.string().url(),
@@ -55,6 +58,9 @@ function loadConfig(): AppConfig {
         port: parseInt(process.env.PORT || '3000', 10),
         nodeEnv: process.env.NODE_ENV,
         jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
+        jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-me',
+        jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
+        jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
         databaseUrl: process.env.DATABASE_URL || 'postgresql://wa_user:wa_pass@localhost:5432/wa_automation',
         redisUrl: process.env.REDIS_URL,
         llmProvider: process.env.LLM_PROVIDER,

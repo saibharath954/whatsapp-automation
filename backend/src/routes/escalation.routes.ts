@@ -1,10 +1,17 @@
 import { FastifyInstance } from 'fastify';
-import { Escalation } from '../types';
+import { authenticate } from '../middleware/auth.middleware';
+import { requireRole, requireOrgAccess } from '../middleware/rbac.middleware';
 
 export async function escalationRoutes(fastify: FastifyInstance) {
+    // All authenticated users can view escalations (AGENT, ORG_ADMIN, SUPER_ADMIN)
+    const authGuard = {
+        preHandler: [authenticate, requireOrgAccess],
+    };
+
     // ─── Get pending escalations ───
     fastify.get<{ Querystring: { orgId: string } }>(
         '/api/escalations',
+        authGuard,
         async (request) => {
             const { escalationService } = fastify as any;
             const escalations = await escalationService.getPendingEscalations(request.query.orgId);
@@ -15,6 +22,7 @@ export async function escalationRoutes(fastify: FastifyInstance) {
     // ─── Get escalation stats ───
     fastify.get<{ Querystring: { orgId: string } }>(
         '/api/escalations/stats',
+        authGuard,
         async (request) => {
             const { escalationService } = fastify as any;
             const stats = await escalationService.getStats(request.query.orgId);
@@ -25,6 +33,7 @@ export async function escalationRoutes(fastify: FastifyInstance) {
     // ─── Operator takes over ───
     fastify.post<{ Params: { id: string }; Body: { operatorName: string } }>(
         '/api/escalations/:id/takeover',
+        { preHandler: [authenticate] },
         async (request, reply) => {
             const { escalationService } = fastify as any;
             const escalation = await escalationService.takeover(
@@ -42,6 +51,7 @@ export async function escalationRoutes(fastify: FastifyInstance) {
     // ─── Resolve escalation ───
     fastify.post<{ Params: { id: string } }>(
         '/api/escalations/:id/resolve',
+        { preHandler: [authenticate] },
         async (request, reply) => {
             const { escalationService } = fastify as any;
             const escalation = await escalationService.resolve(request.params.id);

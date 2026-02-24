@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { api } from '../lib/api';
 import {
     Smartphone,
     Unplug,
@@ -46,7 +47,7 @@ export default function Sessions() {
     useEffect(() => { fetchSessions(); }, []);
 
     const fetchSessions = async () => {
-        try { const res = await fetch('/api/admin/sessions'); const data = await res.json(); setSessions(data.sessions || []); }
+        try { const data = await api.get<{ sessions: SessionInfo[] }>('/api/admin/sessions'); setSessions(data.sessions || []); }
         catch { /* API not available */ }
     };
 
@@ -63,7 +64,7 @@ export default function Sessions() {
     };
 
     const disconnectSession = async () => {
-        try { await fetch(`/api/admin/sessions/${orgId}`, { method: 'DELETE' }); wsRef.current?.close(); setWsStatus('disconnected'); setQrCode(null); fetchSessions(); }
+        try { await api.delete(`/api/admin/sessions/${orgId}`); wsRef.current?.close(); setWsStatus('disconnected'); setQrCode(null); fetchSessions(); }
         catch { /* ignore */ }
     };
 
