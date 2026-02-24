@@ -34,7 +34,7 @@ const services = [
     { name: 'API Server', detail: 'Fastify on port 3000', icon: Server, status: 'Healthy' },
     { name: 'Database', detail: 'PostgreSQL 16', icon: Database, status: 'Connected' },
     { name: 'Redis / Vector DB', detail: 'Redis Stack with RediSearch', icon: HardDrive, status: 'Connected' },
-    { name: 'LLM Provider', detail: 'gemini-2.0-flash', icon: Sparkles, status: 'Gemini' },
+    { name: 'LLM Provider', detail: 'gemini-2.5-flash', icon: Sparkles, status: 'Gemini' },
 ];
 
 export default function Dashboard() {
@@ -49,14 +49,15 @@ export default function Dashboard() {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        if (!orgId) return;
         const fetchStats = async () => {
             setLoading(true);
             setError(null);
             try {
                 const [sessionsRes, escalationsRes, kbRes] = await Promise.allSettled([
                     api.get<{ sessions: any[] }>(`/api/sessions/${orgId}`),
-                    orgId ? api.get<{ stats: any }>(`/api/escalations/stats?orgId=${orgId}`) : Promise.resolve({ stats: { pending: 0 } }),
-                    orgId ? api.get<{ documents: any[] }>(`/api/kb/documents?orgId=${orgId}`) : Promise.resolve({ documents: [] }),
+                    api.get<{ stats: any }>(`/api/escalations/stats?orgId=${orgId}`),
+                    api.get<{ documents: any[] }>(`/api/kb/documents?orgId=${orgId}`),
                 ]);
                 const sessions = sessionsRes.status === 'fulfilled' ? sessionsRes.value : { sessions: [] };
                 const escStats = escalationsRes.status === 'fulfilled' ? escalationsRes.value : { stats: { pending: 0 } };

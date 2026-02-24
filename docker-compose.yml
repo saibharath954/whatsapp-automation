@@ -52,7 +52,7 @@ services:
       REDIS_URL: redis://redis:6379
       LLM_PROVIDER: gemini
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: gemini-2.0-flash
+      GEMINI_MODEL: gemini-2.5-flash
       EMBEDDING_PROVIDER: gemini
       VECTOR_DB_PROVIDER: redis
       RAG_TOP_K: 4

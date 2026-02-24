@@ -16,7 +16,7 @@ CREATE TABLE orgs (
         "max_context_messages": 50,
         "max_context_days": 7,
         "rag_top_k": 4,
-        "similarity_threshold": 0.75,
+        "similarity_threshold": 0.20,
         "confidence_threshold": 0.7,
         "rate_limit_per_minute": 60
     }'::jsonb,

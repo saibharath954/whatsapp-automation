@@ -14,13 +14,20 @@ import { logger } from '../../utils/logger';
  *   3. Replace QR auth with Facebook Business verification flow
  *   See docs/cloud_api_migration.md for full migration guide.
  */
+
+/**
+ * Message sources that must be silently ignored.
+ * These are non-customer messages that can cause VARCHAR overflow or unwanted bot replies.
+ */
+const IGNORED_SOURCES = ['@newsletter', '@g.us', 'status@broadcast'] as const;
+
 export class WhatsAppWebTransport implements WhatsAppTransport {
     private client: Client;
     private status: SessionStatus = 'initializing';
     private orgId: string;
     private messageHandler?: (msg: InboundWhatsAppMessage) => Promise<void>;
     private qrHandler?: (qr: string) => void;
-    private readyHandler?: () => void;
+    private readyHandler?: (phone: string) => void;
     private disconnectedHandler?: (reason: string) => void;
 
     constructor(orgId: string) {
@@ -72,7 +79,7 @@ export class WhatsAppWebTransport implements WhatsAppTransport {
         this.qrHandler = handler;
     }
 
-    onReady(handler: () => void): void {
+    onReady(handler: (phone: string) => void): void {
         this.readyHandler = handler;
     }
 
@@ -111,8 +118,9 @@ export class WhatsAppWebTransport implements WhatsAppTransport {
 
         this.client.on('ready', () => {
             this.status = 'ready';
-            log.info('WhatsApp client ready');
-            this.readyHandler?.();
+            const phone = this.client.info?.wid?.user || 'unknown';
+            log.info({ phone }, 'WhatsApp client ready');
+            this.readyHandler?.(phone);
         });
 
         this.client.on('disconnected', (reason: string) => {
@@ -122,7 +130,22 @@ export class WhatsAppWebTransport implements WhatsAppTransport {
         });
 
         this.client.on('message', async (msg: WAMessage) => {
-            if (!this.messageHandler) return;
+            // ── Filter out non-customer sources ──
+            // Channels, Newsletters, Groups, and Status broadcasts are not customer
+            // conversations and can cause VARCHAR overflow or unwanted bot triggers.
+            if (IGNORED_SOURCES.some((source) => msg.from.includes(source))) {
+                log.debug({ from: msg.from }, 'Ignoring non-customer message source');
+                return;
+            }
+
+            // ── Guard: message handler must be registered ──
+            if (!this.messageHandler) {
+                log.error(
+                    { messageId: msg.id._serialized, from: msg.from },
+                    'CRITICAL: Inbound message received but no messageHandler is registered — message dropped!'
+                );
+                return;
+            }
 
             try {
                 const inbound: InboundWhatsAppMessage = {

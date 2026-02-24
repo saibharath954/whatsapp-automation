@@ -5,7 +5,7 @@ import { logger } from '../../utils/logger';
 
 export class GeminiEmbeddingAdapter implements EmbeddingProvider {
     readonly name = 'gemini';
-    readonly dimensions = 768; // text-embedding-004 dimensions
+    readonly dimensions = 3072; // gemini-embedding-001 dimensions
     private client: GoogleGenerativeAI;
 
     constructor() {
@@ -16,13 +16,13 @@ export class GeminiEmbeddingAdapter implements EmbeddingProvider {
     }
 
     async embed(text: string): Promise<number[]> {
-        const model = this.client.getGenerativeModel({ model: 'text-embedding-004' });
+        const model = this.client.getGenerativeModel({ model: 'gemini-embedding-001' });
         const result = await model.embedContent(text);
         return result.embedding.values;
     }
 
     async embedBatch(texts: string[]): Promise<number[][]> {
-        const model = this.client.getGenerativeModel({ model: 'text-embedding-004' });
+        const model = this.client.getGenerativeModel({ model: 'gemini-embedding-001' });
         const results: number[][] = [];
         // Gemini embeddings API: process in batches
         for (const text of texts) {

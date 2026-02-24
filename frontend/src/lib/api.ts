@@ -44,9 +44,13 @@ export function setOnAuthFailure(cb: () => void) {
 // ─── Core fetch wrapper ───
 
 async function request<T>(method: HttpMethod, url: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-    };
+    const headers: Record<string, string> = {};
+
+    // Only set Content-Type when we actually have a body to send.
+    // Fastify rejects requests with Content-Type: application/json but no body.
+    if (body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;

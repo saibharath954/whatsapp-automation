@@ -44,6 +44,9 @@ export class GeminiAdapter implements LLMProvider {
             const confidence = this.parseConfidence(text);
             const citations = this.parseCitations(text);
 
+            // Strip metadata lines (Confidence/Sources) from customer-facing text
+            const cleanedText = this.stripResponseMetadata(text);
+
             // Estimate token usage (Gemini API provides this in some responses)
             const usage = {
                 prompt_tokens: response.usageMetadata?.promptTokenCount ?? 0,
@@ -52,7 +55,7 @@ export class GeminiAdapter implements LLMProvider {
             };
 
             return {
-                content: text,
+                content: cleanedText,
                 confidence,
                 citations,
                 usage,
@@ -113,5 +116,18 @@ export class GeminiAdapter implements LLMProvider {
         const matches = text.match(/\[(\d+)\]/g);
         if (!matches) return [];
         return [...new Set(matches)];
+    }
+
+    /**
+     * Strip internal metadata (Sources, Confidence) from the customer-facing response.
+     * The LLM is instructed to append these for parsing, but they should not be sent to customers.
+     */
+    private stripResponseMetadata(text: string): string {
+        return text
+            // Remove "Sources: [1], [2], ..." line (with optional leading pipe separator)
+            .replace(/\|?\s*Sources:\s*\[[\d,\s\[\]]+\]/gi, '')
+            // Remove "Confidence: 0.XX" line (with optional leading pipe separator)
+            .replace(/\|?\s*Confidence:\s*[\d.]+/gi, '')
+            .trim();
     }
 }

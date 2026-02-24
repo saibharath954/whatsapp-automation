@@ -34,7 +34,7 @@ A production-grade, multi-tenant WhatsApp automation service with RAG-powered re
 | Database | PostgreSQL 16 |
 | Cache / Vector DB | Redis Stack (RediSearch) |
 | LLM | Gemini 2.0 Flash (default), OpenAI (alternative) |
-| Embeddings | Gemini text-embedding-004 |
+| Embeddings | Gemini text-embedding-001 |
 | WhatsApp | whatsapp-web.js (see [Cloud API migration](docs/cloud_api_migration.md)) |
 | Infra | Docker, Kubernetes |
 | CI | GitHub Actions |

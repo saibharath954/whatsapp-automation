@@ -29,11 +29,14 @@ interface AuthContextValue {
     user: AuthUser | null;
     isLoading: boolean;
     isAuthenticated: boolean;
-    /** Shortcut for user.org_id — used to scope API calls */
+    /**
+     * Resolved org ID for API calls.
+     * - ORG_ADMIN / AGENT: user.org_id (from DB)
+     * - SUPER_ADMIN: auto-resolved to first available org
+     */
     orgId: string | null;
     login: (email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
-    /** Check if user has one of the specified roles */
     hasRole: (roles: UserRole[]) => boolean;
 }
 
@@ -46,15 +49,16 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [resolvedOrgId, setResolvedOrgId] = useState<string | null>(null);
     const logoutRef = useRef<() => void>(() => { });
 
-    // Hard logout: clears token + user state. Called by api.ts when refresh fails.
+    // Hard logout: clears token + user state
     const hardLogout = useCallback(() => {
         setAccessToken(null);
         setUser(null);
+        setResolvedOrgId(null);
     }, []);
 
-    // Keep ref in sync so the api client always calls the latest version
     logoutRef.current = hardLogout;
 
     // Register the auth failure callback with the api client (once)
@@ -62,12 +66,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setOnAuthFailure(() => logoutRef.current());
     }, []);
 
+    // When user changes, resolve orgId
+    useEffect(() => {
+        if (!user) {
+            setResolvedOrgId(null);
+            return;
+        }
+
+        // ORG_ADMIN / AGENT: orgId comes directly from the user record
+        if (user.org_id) {
+            setResolvedOrgId(user.org_id);
+            return;
+        }
+
+        // SUPER_ADMIN: org_id is null → fetch first available org
+        if (user.role === 'SUPER_ADMIN') {
+            let cancelled = false;
+            async function resolveOrg() {
+                try {
+                    const { orgs } = await api.get<{ orgs: { id: string }[] }>('/api/admin/orgs');
+                    if (!cancelled && orgs.length > 0) {
+                        setResolvedOrgId(orgs[0].id);
+                    }
+                } catch {
+                    // Can't resolve org — orgId stays null
+                }
+            }
+            resolveOrg();
+            return () => { cancelled = true; };
+        }
+    }, [user]);
+
     // On mount, try to restore session via refresh token cookie
     useEffect(() => {
         let cancelled = false;
         async function restoreSession() {
             try {
-                // Attempt silent refresh (uses HTTP-only cookie)
                 const refreshRes = await fetch('/api/auth/refresh', {
                     method: 'POST',
                     credentials: 'include',
@@ -76,7 +110,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 });
 
                 if (!refreshRes.ok) {
-                    // No valid session — just show login
                     if (!cancelled) setIsLoading(false);
                     return;
                 }
@@ -84,11 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const { accessToken } = await refreshRes.json();
                 setAccessToken(accessToken);
 
-                // Fetch user profile with the new token
                 const { user: userData } = await api.get<{ user: AuthUser }>('/api/auth/me');
                 if (!cancelled) setUser(userData);
             } catch {
-                // Session restore failed — user needs to login
                 setAccessToken(null);
             } finally {
                 if (!cancelled) setIsLoading(false);
@@ -110,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const logout = useCallback(async () => {
         try {
-            await api.post('/api/auth/logout');
+            await api.post('/api/auth/logout', {});
         } catch {
             // Ignore logout errors — clear state regardless
         } finally {
@@ -132,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 user,
                 isLoading,
                 isAuthenticated: !!user,
-                orgId: user?.org_id ?? null,
+                orgId: resolvedOrgId,
                 login,
                 logout,
                 hasRole,

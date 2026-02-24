@@ -145,9 +145,9 @@ export default function Automations() {
                     <div className="p-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <label className="block text-xs font-medium text-muted-foreground mb-1.5">Similarity Threshold</label>
-                            <input type="number" step="0.05" min="0" max="1" defaultValue="0.75"
+                            <input type="number" step="0.05" min="0" max="1" defaultValue="0.20"
                                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-ring" />
-                            <p className="text-xs text-muted-foreground mt-1.5">KB retrieval must exceed this score (default: 0.75)</p>
+                            <p className="text-xs text-muted-foreground mt-1.5">KB retrieval must exceed this score (default: 0.20)</p>
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-muted-foreground mb-1.5">LLM Confidence Threshold</label>

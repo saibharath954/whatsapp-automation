@@ -258,7 +258,7 @@ export interface WhatsAppTransport {
     sendMessage(to: string, text: string): Promise<void>;
     onMessage(handler: (msg: InboundWhatsAppMessage) => Promise<void>): void;
     onQR(handler: (qr: string) => void): void;
-    onReady(handler: () => void): void;
+    onReady(handler: (phone: string) => void): void;
     onDisconnected(handler: (reason: string) => void): void;
     getStatus(): SessionStatus;
     disconnect(): Promise<void>;

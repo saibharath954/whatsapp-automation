@@ -83,7 +83,7 @@ describe('Prompt Builder', () => {
 
             expect(prompt).toContain('Demo Corp');
             expect(prompt).toContain('ONLY use information from the PROVIDED SOURCES');
-            expect(prompt).toContain('NEVER make up information');
+            expect(prompt).toContain('NEVER make up factual information');
             expect(prompt).toContain('cite your sources');
             expect(prompt).toContain('[1]');
             expect(prompt).toContain('Confidence:');

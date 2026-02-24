@@ -117,7 +117,7 @@ data:
   PORT: "3000"
   NODE_ENV: "production"
   LLM_PROVIDER: "gemini"
-  GEMINI_MODEL: "gemini-2.0-flash"
+  GEMINI_MODEL: "gemini-2.5-flash"
   EMBEDDING_PROVIDER: "gemini"
   VECTOR_DB_PROVIDER: "redis"
   RAG_TOP_K: "4"

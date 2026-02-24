@@ -20,14 +20,18 @@ import { logger } from '../../utils/logger';
  * Message Pipeline: the core handler for every inbound WhatsApp message.
  *
  * For each incoming message:
- *  1. Save message to DB
- *  2. Resolve/create conversation and customer
+ *  1. Resolve/create customer and conversation
+ *  2. Save inbound message to DB
  *  3. Assemble full context (conversation history, customer profile, session, etc.)
  *  4. Run RAG retrieval over org's KB
  *  5. Build prompt with anti-hallucination system prompt
- *  6. Call LLM
- *  7. Check confidence → reply or escalate
+ *  6. Call LLM — ALWAYS, even if no KB docs were found (handles greetings, chitchat)
+ *  7. Check LLM confidence → reply or escalate
  *  8. Save bot reply to DB
+ *
+ * IMPORTANT: The pipeline binds itself to the SessionManager's globalMessageHandler
+ * in the constructor, guaranteeing all sessions route messages through this pipeline
+ * without needing explicit per-org registration.
  */
 export class MessagePipeline {
     constructor(
@@ -37,20 +41,13 @@ export class MessagePipeline {
         private retrievalService: RetrievalService,
         private llmProvider: LLMProvider,
         private escalationService: EscalationService,
-    ) { }
-
-    /**
-     * Register this pipeline as the message handler for an org's WhatsApp session.
-     */
-    registerForOrg(orgId: string): void {
-        const transport = this.sessionManager.getTransport(orgId);
-        if (!transport) {
-            logger.warn({ orgId }, 'No transport found for org');
-            return;
-        }
-        transport.onMessage(async (msg) => {
-            await this.handleInboundMessage(orgId, msg);
-        });
+    ) {
+        // Bind this pipeline as the global message handler for ALL sessions.
+        // This eliminates the race condition where messages arrive before
+        // a per-org handler is registered.
+        this.sessionManager.setGlobalMessageHandler(
+            (orgId, msg) => this.handleInboundMessage(orgId, msg)
+        );
     }
 
     /**
@@ -110,26 +107,17 @@ export class MessagePipeline {
             // 7. Apply token budget
             context = this.tokenBudgetManager.trimContext(context);
 
-            // 8. Check if retrieval confidence is sufficient
-            const confidenceThreshold = settings.confidence_threshold || config.llmConfidenceThreshold;
-
-            if (aggregateConfidence < confidenceThreshold && retrievalResults.length === 0) {
-                // No relevant documents found — send fallback
-                log.info({ aggregateConfidence }, 'Low retrieval confidence, sending fallback');
-                await this.handleLowConfidence(
-                    orgId,
-                    conversation.id,
-                    customer.id,
-                    msg.from,
-                    settings.fallback_message || 'I don\'t know based on our documents. Would you like to connect to a human?',
-                    'No relevant KB documents found'
-                );
-                return;
-            }
-
-            // 9. Build prompts and call LLM
+            // 8. Build prompts and call LLM — ALWAYS
+            // We no longer short-circuit on low RAG confidence. The LLM can handle
+            // greetings ("Hi there!"), chitchat, and general queries without KB docs.
+            // The system prompt instructs it to only cite KB when available.
             const systemPrompt = buildSystemPrompt(org.name);
             const userPrompt = buildUserPrompt(msg.body, context);
+
+            log.info(
+                { aggregateConfidence, retrievalCount: retrievalResults.length },
+                'Calling LLM'
+            );
 
             const llmResponse = await this.llmProvider.chat({
                 system_prompt: systemPrompt,
@@ -138,7 +126,9 @@ export class MessagePipeline {
                 max_tokens: 2048,
             });
 
-            // 10. Check LLM confidence
+            // 9. Check LLM confidence — this is the ONLY escalation gate
+            const confidenceThreshold = settings.confidence_threshold || config.llmConfidenceThreshold;
+
             if (llmResponse.confidence < confidenceThreshold) {
                 log.info({ confidence: llmResponse.confidence }, 'Low LLM confidence, escalating');
                 await this.handleLowConfidence(
@@ -152,10 +142,10 @@ export class MessagePipeline {
                 return;
             }
 
-            // 11. Extract linked doc IDs from citations
+            // 10. Extract linked doc IDs from citations
             const linkedDocIds = this.extractLinkedDocIds(llmResponse.citations, retrievalResults);
 
-            // 12. Save bot reply to DB
+            // 11. Save bot reply to DB
             await this.saveBotMessage(
                 conversation.id,
                 orgId,
@@ -164,7 +154,7 @@ export class MessagePipeline {
                 linkedDocIds,
             );
 
-            // 13. Send reply via WhatsApp
+            // 12. Send reply via WhatsApp
             const transport = this.sessionManager.getTransport(orgId);
             if (transport) {
                 await transport.sendMessage(msg.from, llmResponse.content);

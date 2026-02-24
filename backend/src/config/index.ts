@@ -20,7 +20,7 @@ const configSchema = z.object({
     // LLM
     llmProvider: z.enum(['gemini', 'openai', 'grok']).default('gemini'),
     geminiApiKey: z.string().optional(),
-    geminiModel: z.string().default('gemini-2.0-flash'),
+    geminiModel: z.string().default('gemini-2.5-flash'),
     openaiApiKey: z.string().optional(),
     openaiModel: z.string().default('gpt-4o'),
 
@@ -33,7 +33,7 @@ const configSchema = z.object({
 
     // RAG
     ragTopK: z.number().default(4),
-    ragSimilarityThreshold: z.number().default(0.75),
+    ragSimilarityThreshold: z.number().default(0.20),
     llmConfidenceThreshold: z.number().default(0.7),
     contextMaxMessages: z.number().default(50),
     contextMaxDays: z.number().default(7),
@@ -72,7 +72,7 @@ function loadConfig(): AppConfig {
         openaiEmbeddingModel: process.env.OPENAI_EMBEDDING_MODEL,
         vectorDbProvider: process.env.VECTOR_DB_PROVIDER,
         ragTopK: parseInt(process.env.RAG_TOP_K || '4', 10),
-        ragSimilarityThreshold: parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.75'),
+        ragSimilarityThreshold: parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.20'),
         llmConfidenceThreshold: parseFloat(process.env.LLM_CONFIDENCE_THRESHOLD || '0.7'),
         contextMaxMessages: parseInt(process.env.CONTEXT_MAX_MESSAGES || '50', 10),
         contextMaxDays: parseInt(process.env.CONTEXT_MAX_DAYS || '7', 10),

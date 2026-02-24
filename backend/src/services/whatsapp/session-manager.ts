@@ -1,16 +1,31 @@
 import { WhatsAppWebTransport } from './whatsapp-web.transport';
-import { WhatsAppTransport, SessionStatus } from '../../types';
+import { WhatsAppTransport, InboundWhatsAppMessage, SessionStatus } from '../../types';
 import { query, queryOne } from '../../db';
 import { logger } from '../../utils/logger';
 
 /**
  * WhatsApp Session Manager.
  * Manages per-org WhatsApp sessions with lifecycle management.
+ *
+ * Uses a globalMessageHandler pattern to guarantee zero dropped messages:
+ * the handler is bound to every transport immediately at creation time,
+ * before initialization completes, eliminating the race condition where
+ * messages arrive before a pipeline is registered.
  */
 export class SessionManager {
     private sessions: Map<string, WhatsAppTransport> = new Map();
     private qrCallbacks: Map<string, (qr: string) => void> = new Map();
     private statusCallbacks: Map<string, (status: SessionStatus) => void> = new Map();
+    private globalMessageHandler?: (orgId: string, msg: InboundWhatsAppMessage) => Promise<void>;
+
+    /**
+     * Set the global message handler that all sessions route inbound messages to.
+     * This MUST be called before any session is created (typically from MessagePipeline constructor).
+     */
+    setGlobalMessageHandler(handler: (orgId: string, msg: InboundWhatsAppMessage) => Promise<void>): void {
+        this.globalMessageHandler = handler;
+        logger.info('Global message handler registered');
+    }
 
     /**
      * Create and initialize a new WhatsApp session for an org.
@@ -46,7 +61,19 @@ export class SessionManager {
         // Create transport
         const transport = new WhatsAppWebTransport(orgId);
 
-        // Wire up events
+        // ── Bind message handler IMMEDIATELY (before initialize) ──
+        // This guarantees zero dropped messages: even if a message arrives
+        // the instant the client becomes ready, the handler is already in place.
+        if (this.globalMessageHandler) {
+            const handler = this.globalMessageHandler;
+            transport.onMessage(async (msg) => {
+                await handler(orgId, msg);
+            });
+        } else {
+            logger.warn({ orgId }, 'No globalMessageHandler set — inbound messages will be dropped');
+        }
+
+        // Wire up QR callback
         transport.onQR((qr) => {
             this.qrCallbacks.get(orgId)?.(qr);
             query(
@@ -55,14 +82,16 @@ export class SessionManager {
             ).catch((err) => logger.error({ err }, 'Failed to update session status'));
         });
 
-        transport.onReady(() => {
+        // Wire up ready callback — persist the bot's phone number
+        transport.onReady((phone) => {
             this.statusCallbacks.get(orgId)?.('ready');
             query(
-                `UPDATE whatsapp_sessions SET status = 'ready', last_active_at = NOW(), updated_at = NOW() WHERE org_id = $1`,
-                [orgId]
+                `UPDATE whatsapp_sessions SET status = 'ready', phone_number = $2, last_active_at = NOW(), updated_at = NOW() WHERE org_id = $1`,
+                [orgId, phone]
             ).catch((err) => logger.error({ err }, 'Failed to update session status'));
         });
 
+        // Wire up disconnect callback
         transport.onDisconnected((reason) => {
             this.statusCallbacks.get(orgId)?.('disconnected');
             query(
