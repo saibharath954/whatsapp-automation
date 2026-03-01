@@ -46,8 +46,8 @@ export async function authRoutes(fastify: FastifyInstance) {
                 reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    path: '/api/auth',
+                    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                    path: '/',
                     maxAge: REFRESH_MAX_AGE,
                 });
 
@@ -84,8 +84,8 @@ export async function authRoutes(fastify: FastifyInstance) {
             reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
-                path: '/api/auth',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                path: '/',
                 maxAge: REFRESH_MAX_AGE,
             });
 
@@ -93,7 +93,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         } catch (err: any) {
             if (err instanceof authService.AuthError) {
                 // Clear the bad cookie
-                reply.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+                reply.clearCookie(REFRESH_COOKIE, { path: '/' });
                 reply.code(err.statusCode).send({ error: err.message });
                 return;
             }
@@ -108,7 +108,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         if (refreshToken) {
             await authService.logout(refreshToken);
         }
-        reply.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+        reply.clearCookie(REFRESH_COOKIE, { path: '/' });
         return { message: 'Logged out' };
     });
 

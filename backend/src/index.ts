@@ -31,7 +31,13 @@ async function main() {
     });
 
     // ─── Plugins ───
-    await app.register(cors, { origin: true, credentials: true });
+    const frontendUrl = process.env.FRONTEND_URL; // e.g. 'https://whatsapp-automation-sigma.vercel.app'
+    await app.register(cors, {
+        origin: frontendUrl
+            ? [frontendUrl, 'http://localhost:5173'] // production whitelist + local dev
+            : true, // dev: allow all origins
+        credentials: true,
+    });
     await app.register(cookie);
     await app.register(websocket);
 

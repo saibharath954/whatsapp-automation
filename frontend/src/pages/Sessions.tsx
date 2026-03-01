@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { api } from '../lib/api';
+import { api, API_BASE } from '../lib/api';
 import { useAuth } from '../components/AuthProvider';
 import {
     Smartphone,
@@ -64,7 +64,15 @@ export default function Sessions() {
 
     const connectSession = () => {
         if (!orgId) return;
-        const ws = new WebSocket(`ws://${window.location.host}/ws/session/${orgId}`);
+        // In production, derive WS URL from API_BASE (https → wss)
+        // In dev, fall back to current window host (Vite proxy handles /ws)
+        let wsBase: string;
+        if (API_BASE) {
+            wsBase = API_BASE.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+        } else {
+            wsBase = `ws://${window.location.host}`;
+        }
+        const ws = new WebSocket(`${wsBase}/ws/session/${orgId}`);
         wsRef.current = ws;
         ws.onopen = () => { setWsStatus('connecting'); ws.send(JSON.stringify({ type: 'connect' })); };
         ws.onmessage = (e) => {

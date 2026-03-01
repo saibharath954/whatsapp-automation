@@ -4,12 +4,17 @@
  *  - 401 interception with queued silent refresh (single refresh for N concurrent 401s)
  *  - Logout callback to clear AuthProvider state when refresh fails
  *  - Fastify-compatible refresh POST (body: '{}', credentials: 'include')
+ *  - Production-aware base URL from VITE_API_URL env variable
  *
  * Usage:
  *   import { api } from '../lib/api';
  *   const data = await api.get<{ orgs: Org[] }>('/api/admin/orgs');
  */
 
+// ─── Base URL ───
+// In dev: empty string (Vite proxy handles /api → localhost:3000)
+// In production: e.g. 'https://wa-backend-kzz6.onrender.com'
+export const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
 // ─── In-memory token ───
@@ -56,7 +61,9 @@ async function request<T>(method: HttpMethod, url: string, body?: unknown): Prom
         headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
-    const res = await fetch(url, {
+    const fullUrl = `${API_BASE}${url}`;
+
+    const res = await fetch(fullUrl, {
         method,
         headers,
         credentials: 'include',
@@ -76,7 +83,7 @@ async function request<T>(method: HttpMethod, url: string, body?: unknown): Prom
                 const newToken = await silentRefresh();
 
                 // Retry the original request with the fresh token
-                const retryRes = await fetch(url, {
+                const retryRes = await fetch(fullUrl, {
                     method,
                     headers: { ...headers, Authorization: `Bearer ${newToken}` },
                     credentials: 'include',
@@ -133,7 +140,7 @@ async function silentRefresh(): Promise<string> {
     isRefreshing = true;
 
     try {
-        const res = await fetch('/api/auth/refresh', {
+        const res = await fetch(`${API_BASE}/api/auth/refresh`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
